@@ -21,9 +21,9 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from .. import google
-from livekit.plugins.google import default_async
-from livekit.plugins.google import Client, types
-from livekit.plugins.google import APIError, ClientError, ServerError
+from google.auth._default_async import default_async
+from google.genai import Client, types
+from google.genai.errors import APIError, ClientError, ServerError
 from livekit.agents import APIConnectionError, APIStatusError, llm, utils
 from livekit.agents.llm import ToolChoice, utils as llm_utils
 from livekit.agents.types import (

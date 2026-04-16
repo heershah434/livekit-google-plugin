@@ -11,9 +11,9 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from ... import google
-from livekit.plugins.google import default_async
-from livekit.plugins.google import Client as GenAIClient, types
-from livekit.plugins.google import AsyncSession
+from google.auth._default_async import default_async
+from google.genai import Client as GenAIClient, types
+from google.genai.live import AsyncSession
 from livekit import rtc
 from livekit.agents import APIConnectionError, LanguageCode, llm, utils
 from livekit.agents.metrics import RealtimeModelMetrics
@@ -245,7 +245,7 @@ class RealtimeModel(llm.RealtimeModel):
             top_k (int, optional): The top-k value for response generation
             presence_penalty (float, optional): The presence penalty for response generation
             frequency_penalty (float, optional): The frequency penalty for response generation
-            input_audio_transcription (AudioTranscriptionConfig | None, optional): The configuration for input audio transcription. Defaults to None.)
+            input_audio_transcription (AudioTranscriptionConfig | None, optional): The configuration for input audio transcription. Defaults to None.
             output_audio_transcription (AudioTranscriptionConfig | None, optional): The configuration for output audio transcription. Defaults to AudioTranscriptionConfig().
             image_encode_options (images.EncodeOptions, optional): The configuration for image encoding. Defaults to DEFAULT_ENCODE_OPTIONS.
             enable_affective_dialog (bool, optional): Whether to enable affective dialog. Defaults to False.
@@ -952,7 +952,6 @@ class RealtimeSession(llm.RealtimeSession):
                         break
 
                 async for response in session.receive():
-                    logger.info(f"<<< heer received response {response}")
                     if lk_google_debug:
                         resp_copy = response.model_dump(exclude_defaults=True)
                         # remove audio from debugging logs

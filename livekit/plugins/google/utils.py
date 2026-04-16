@@ -6,7 +6,8 @@ from typing import Any
 
 from pydantic import TypeAdapter
 
-from livekit.plugins.google import types
+from .. import google
+from google.genai import types
 from livekit.agents import llm
 from livekit.agents.llm import utils as llm_utils
 from livekit.agents.types import NOT_GIVEN, NotGivenOr

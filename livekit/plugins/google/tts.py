@@ -21,10 +21,10 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from .. import google
-from livekit.plugins.google import ClientOptions
-from livekit.plugins.google import DeadlineExceeded, GoogleAPICallError
-from livekit.plugins.google import texttospeech
-from livekit.plugins.google import (
+from google.api_core.client_options import ClientOptions
+from google.api_core.exceptions import DeadlineExceeded, GoogleAPICallError
+from google.cloud import texttospeech
+from google.cloud.texttospeech_v1.types import (
     CustomPronunciations,
     SsmlVoiceGender,
     SynthesizeSpeechResponse,

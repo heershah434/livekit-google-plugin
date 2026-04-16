@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Literal
 
-from livekit.plugins.google import types
+from ... import google
+from google.genai import types
 
 # Gemini API deprecations: https://ai.google.dev/gemini-api/docs/deprecations
 # Gemini API release notes with preview deprecations: https://ai.google.dev/gemini-api/docs/changelog

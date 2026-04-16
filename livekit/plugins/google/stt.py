@@ -24,15 +24,15 @@ from datetime import timedelta
 from typing import cast, get_args
 
 from .. import google
-from livekit.plugins.google import ClientOptions
-from livekit.plugins.google import DeadlineExceeded, GoogleAPICallError
-from livekit.plugins.google import default as gauth_default
-from livekit.plugins.google import DefaultCredentialsError
-from livekit.plugins.google import SpeechAsyncClient as SpeechAsyncClientV1
-from livekit.plugins.google import cloud_speech as cloud_speech_v1, resource as resource_v1
-from livekit.plugins.google import SpeechAsyncClient as SpeechAsyncClientV2
-from livekit.plugins.google import cloud_speech as cloud_speech_v2
-from livekit.plugins.google import Duration
+from google.api_core.client_options import ClientOptions
+from google.api_core.exceptions import DeadlineExceeded, GoogleAPICallError
+from google.auth import default as gauth_default
+from google.auth.exceptions import DefaultCredentialsError
+from google.cloud.speech_v1 import SpeechAsyncClient as SpeechAsyncClientV1
+from google.cloud.speech_v1.types import cloud_speech as cloud_speech_v1, resource as resource_v1
+from google.cloud.speech_v2 import SpeechAsyncClient as SpeechAsyncClientV2
+from google.cloud.speech_v2.types import cloud_speech as cloud_speech_v2
+from google.protobuf.duration_pb2 import Duration
 from livekit import rtc
 from livekit.agents import (
     DEFAULT_API_CONNECT_OPTIONS,
