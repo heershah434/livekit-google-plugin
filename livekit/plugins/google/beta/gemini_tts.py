@@ -119,7 +119,7 @@ class TTS(tts.TTS):
 
         if use_vertexai:
             if not gcp_project:
-                from livekit.plugins.google import default_async
+                from google.auth._default_async import default_async
 
                 _, gcp_project = default_async(  # type: ignore
                     scopes=["https://www.googleapis.com/auth/cloud-platform"]
