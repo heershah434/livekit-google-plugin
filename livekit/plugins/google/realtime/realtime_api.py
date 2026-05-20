@@ -495,6 +495,7 @@ class RealtimeSession(llm.RealtimeSession):
         self._in_user_activity = False
         self._session_lock = asyncio.Lock()
         self._num_retries = 0
+        self._pending_tool_result: types.LiveClientToolResponse | None = None
 
     async def _close_active_session(self) -> None:
         async with self._session_lock:
@@ -626,17 +627,23 @@ class RealtimeSession(llm.RealtimeSession):
                 vertexai=self._opts.vertexai,
                 tool_response_scheduling=self._opts.tool_response_scheduling,
             )
-            if self._realtime_model.capabilities.mutable_chat_context:
-                turns_dict, _ = append_ctx.copy(exclude_function_call=True).to_provider_format(
-                    format="google", inject_dummy_user_message=False
-                )
-                turns = [types.Content.model_validate(turn) for turn in turns_dict]
-                if turns:
-                    self._send_client_event(
-                        types.LiveClientContent(turns=turns, turn_complete=False)
+            if self._session_should_close.is_set():
+                # session is restarting due to update_tools — stash for replay after reconnect
+                if tool_results:
+                    logger.warning("[RESTART] stashing tool result for replay after reconnect")
+                    self._pending_tool_result = tool_results
+            else:
+                if self._realtime_model.capabilities.mutable_chat_context:
+                    turns_dict, _ = append_ctx.copy(exclude_function_call=True).to_provider_format(
+                        format="google", inject_dummy_user_message=False
                     )
-            if tool_results:
-                self._send_client_event(tool_results)
+                    turns = [types.Content.model_validate(turn) for turn in turns_dict]
+                    if turns:
+                        self._send_client_event(
+                            types.LiveClientContent(turns=turns, turn_complete=False)
+                        )
+                if tool_results:
+                    self._send_client_event(tool_results)
 
         # since we don't have a view of the history on the server side, we'll assume
         # the current state is accurate. this isn't perfect because removals aren't done.
@@ -818,6 +825,7 @@ class RealtimeSession(llm.RealtimeSession):
 
         while not self._msg_ch.closed:
             # previous session might not be closed yet, we'll do it here.
+            self._generation_completed = True
             await self._close_active_session()
 
             self._session_should_close.clear()
@@ -862,6 +870,22 @@ class RealtimeSession(llm.RealtimeSession):
                                 turn_complete=False,
                             )
 
+                    if self._pending_tool_result:
+                        logger.warning("[RESTART] replaying stashed tool result to new session")
+                        tool_result = self._pending_tool_result
+                        self._pending_tool_result = None
+                        await session.send_tool_response(
+                            function_responses=tool_result.function_responses
+                        )
+                        # trigger model to respond to the tool result
+                        # Dump the tool result directly into the user message
+                        result_str = str([r.response for r in tool_result.function_responses])
+                        await session.send_client_content(
+                            turns=[
+                                types.Content(parts=[types.Part(text=f"Tool returned: {result_str}. Please proceed.")],
+                                              role="user")],
+                            turn_complete=True,
+                        )
                     # queue up existing chat context
                     send_task = asyncio.create_task(
                         self._send_task(session), name="gemini-realtime-send"
