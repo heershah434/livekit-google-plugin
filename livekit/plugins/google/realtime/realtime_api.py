@@ -879,13 +879,14 @@ class RealtimeSession(llm.RealtimeSession):
                         )
                         # trigger model to respond to the tool result
                         # Dump the tool result directly into the user message
-                        result_str = str([r.response for r in tool_result.function_responses])
-                        await session.send_client_content(
-                            turns=[
-                                types.Content(parts=[types.Part(text=f"Tool returned: {result_str}. Please proceed.")],
-                                              role="user")],
-                            turn_complete=True,
-                        )
+                        if not self._opts.vertexai:
+                            result_str = str([r.response for r in tool_result.function_responses])
+                            await session.send_client_content(
+                                turns=[
+                                    types.Content(parts=[types.Part(text=f"Tool returned: {result_str}. Please proceed.")],
+                                                  role="user")],
+                                turn_complete=True,
+                            )
                     # queue up existing chat context
                     send_task = asyncio.create_task(
                         self._send_task(session), name="gemini-realtime-send"
