@@ -20,7 +20,6 @@ from collections.abc import AsyncGenerator
 from dataclasses import dataclass, replace
 from typing import Any
 
-from .. import google
 import google.auth
 from google.api_core.client_options import ClientOptions
 from google.api_core.exceptions import DeadlineExceeded, GoogleAPICallError

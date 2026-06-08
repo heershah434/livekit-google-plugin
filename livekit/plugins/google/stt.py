@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import time
 import weakref
@@ -23,7 +24,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import cast, get_args
 
-from .. import google
+from grpc.aio import StreamStreamCall
 import google.auth
 from google.api_core.client_options import ClientOptions
 from google.api_core.exceptions import DeadlineExceeded, GoogleAPICallError
@@ -50,6 +51,7 @@ from livekit.agents.types import (
     NotGivenOr,
 )
 from livekit.agents.utils import is_given
+from livekit.agents.utils.aio import ChanClosed
 from livekit.agents.voice.io import TimedString
 
 from .log import logger
@@ -749,14 +751,25 @@ class SpeechStream(stt.SpeechStream):
             None,
         ]:
             nonlocal audio_pushed
+            stop_task = asyncio.create_task(should_stop.wait())
             try:
                 yield self._build_init_request(client)
 
-                async for frame in self._input_ch:
-                    # when the stream is aborted due to reconnect, this input_generator
-                    # needs to stop consuming frames
-                    # when the generator stops, the previous gRPC stream will close
-                    if should_stop.is_set():
+                while True:
+                    # Race the next-frame await against should_stop so this generator
+                    # can exit even when no audio is flowing. Without this, on reconnect
+                    # the generator stays parked on _input_ch and pins the previous
+                    # gRPC streaming call, leaking it across iterations.
+                    frame_task = asyncio.create_task(self._input_ch.recv())
+                    done, _ = await asyncio.wait(
+                        [frame_task, stop_task], return_when=asyncio.FIRST_COMPLETED
+                    )
+                    if stop_task in done:
+                        frame_task.cancel()
+                        return
+                    try:
+                        frame = frame_task.result()
+                    except ChanClosed:
                         return
 
                     if isinstance(frame, rtc.AudioFrame):
@@ -766,6 +779,8 @@ class SpeechStream(stt.SpeechStream):
 
             except Exception:
                 logger.exception("an error occurred while streaming input to google STT")
+            finally:
+                stop_task.cancel()
 
         async def process_stream(
             client: SpeechAsyncClientV2 | SpeechAsyncClientV1,
@@ -883,6 +898,12 @@ class SpeechStream(stt.SpeechStream):
                         self._reconnect_event.clear()
                     finally:
                         should_stop.set()
+                        # Cancel the streaming RPC so its underlying call object releases
+                        # its read/write tasks and request iterator. Without this the
+                        # call (and the input_generator that yielded into it) stays
+                        # pinned across reconnects and leaks ~0.4 MB per cycle.
+                        with contextlib.suppress(Exception):
+                            cast(StreamStreamCall, stream).cancel()
                         if not process_stream_task.done() and not wait_reconnect_task.done():
                             # try to gracefully stop the process_stream_task
                             try:

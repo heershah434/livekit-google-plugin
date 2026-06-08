@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Literal
 
-from ... import google
 from google.genai import types
 
 # Gemini API deprecations: https://ai.google.dev/gemini-api/docs/deprecations

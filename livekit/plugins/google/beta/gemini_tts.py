@@ -4,7 +4,6 @@ import os
 from dataclasses import dataclass
 from typing import Literal
 
-from ... import google
 from google.genai import Client, types
 from google.genai.errors import APIError, ClientError, ServerError
 from livekit.agents import APIConnectionError, APIStatusError, tts, utils

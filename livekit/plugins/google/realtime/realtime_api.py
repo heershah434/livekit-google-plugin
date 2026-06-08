@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Literal
 
-from ... import google
+import google.auth.credentials
 from google.auth._default_async import default_async
 from google.genai import Client as GenAIClient, types
 from google.genai.live import AsyncSession
@@ -140,6 +140,7 @@ class _RealtimeOptions:
     image_encode_options: NotGivenOr[images.EncodeOptions]
     conn_options: APIConnectOptions
     http_options: NotGivenOr[types.HttpOptions]
+    media_resolution: NotGivenOr[types.MediaResolution] = NOT_GIVEN
     enable_affective_dialog: NotGivenOr[bool] = NOT_GIVEN
     proactivity: NotGivenOr[bool] = NOT_GIVEN
     realtime_input_config: NotGivenOr[types.RealtimeInputConfig] = NOT_GIVEN
@@ -216,6 +217,7 @@ class RealtimeModel(llm.RealtimeModel):
         api_version: NotGivenOr[str] = NOT_GIVEN,
         conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS,
         http_options: NotGivenOr[types.HttpOptions] = NOT_GIVEN,
+        media_resolution: NotGivenOr[types.MediaResolution] = NOT_GIVEN,
         thinking_config: NotGivenOr[types.ThinkingConfig] = NOT_GIVEN,
         credentials: google.auth.credentials.Credentials | None = None,
     ) -> None:
@@ -245,9 +247,10 @@ class RealtimeModel(llm.RealtimeModel):
             top_k (int, optional): The top-k value for response generation
             presence_penalty (float, optional): The presence penalty for response generation
             frequency_penalty (float, optional): The frequency penalty for response generation
-            input_audio_transcription (AudioTranscriptionConfig | None, optional): The configuration for input audio transcription. Defaults to None.
+            input_audio_transcription (AudioTranscriptionConfig | None, optional): The configuration for input audio transcription. Defaults to None.)
             output_audio_transcription (AudioTranscriptionConfig | None, optional): The configuration for output audio transcription. Defaults to AudioTranscriptionConfig().
             image_encode_options (images.EncodeOptions, optional): The configuration for image encoding. Defaults to DEFAULT_ENCODE_OPTIONS.
+            media_resolution (MediaResolution, optional): The media resolution for the session. Defaults to None.
             enable_affective_dialog (bool, optional): Whether to enable affective dialog. Defaults to False.
             proactivity (bool, optional): Whether to enable proactive audio. Defaults to False.
             realtime_input_config (RealtimeInputConfig, optional): The configuration for realtime input. Defaults to None.
@@ -371,6 +374,7 @@ class RealtimeModel(llm.RealtimeModel):
             tool_response_scheduling=tool_response_scheduling,
             conn_options=conn_options,
             http_options=http_options,
+            media_resolution=media_resolution,
             thinking_config=thinking_config,
             session_resumption=session_resumption,
             credentials=credentials,
@@ -726,7 +730,11 @@ class RealtimeSession(llm.RealtimeSession):
             logger.warning(
                 "generate_reply called while another generation is pending, cancelling previous."
             )
-            self._pending_generation_fut.cancel("Superseded by new generate_reply call")
+            # clear the slot before cancelling so the done callback doesn't treat it
+            # as an external cancellation and signal the server.
+            old_fut = self._pending_generation_fut
+            self._pending_generation_fut = None
+            old_fut.cancel("Superseded by new generate_reply call")
 
         fut = asyncio.Future[llm.GenerationCreatedEvent]()
         self._pending_generation_fut = fut
@@ -761,7 +769,17 @@ class RealtimeSession(llm.RealtimeSession):
                     self._pending_generation_fut = None
 
         timeout_handle = asyncio.get_event_loop().call_later(5.0, _on_timeout)
-        fut.add_done_callback(lambda _: timeout_handle.cancel())
+
+        def _on_fut_done(f: asyncio.Future[llm.GenerationCreatedEvent]) -> None:
+            timeout_handle.cancel()
+            is_current = self._pending_generation_fut is fut
+            if is_current:
+                self._pending_generation_fut = None
+            if f.cancelled() and is_current:
+                # external cancel: signal interrupt to Gemini via activity_start
+                self.interrupt()
+
+        fut.add_done_callback(_on_fut_done)
 
         return fut
 
@@ -1088,7 +1106,11 @@ class RealtimeSession(llm.RealtimeSession):
     def _build_connect_config(self) -> types.LiveConnectConfig:
         temp = self._opts.temperature if is_given(self._opts.temperature) else None
 
-        tools_config = create_tools_config(self._tools, tool_behavior=self._opts.tool_behavior)
+        tools_config = create_tools_config(
+            self._tools,
+            tool_behavior=self._opts.tool_behavior,
+            use_parameters_json_schema=False,
+        )
         conf = types.LiveConnectConfig(
             response_modalities=self._opts.response_modalities,
             history_config=types.HistoryConfig(initial_history_in_client_content=True)
@@ -1110,6 +1132,9 @@ class RealtimeSession(llm.RealtimeSession):
                 else None,
                 thinking_config=self._opts.thinking_config
                 if is_given(self._opts.thinking_config)
+                else None,
+                media_resolution=self._opts.media_resolution
+                if is_given(self._opts.media_resolution)
                 else None,
             ),
             system_instruction=types.Content(parts=[types.Part(text=self._opts.instructions)])
@@ -1315,6 +1340,7 @@ class RealtimeSession(llm.RealtimeSession):
         if not self._current_generation:
             logger.warning("received tool call but no active generation.")
             return
+
         gen = self._current_generation
         for fnc_call in tool_call.function_calls or []:
             arguments = json.dumps(fnc_call.args)

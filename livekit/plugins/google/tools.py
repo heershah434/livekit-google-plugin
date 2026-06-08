@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from .. import google
 from google.genai import types
 from livekit.agents import llm
 
